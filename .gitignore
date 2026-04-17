@@ -1,6 +1,8 @@
 data
 cache
 .vscode
+.codex
+examples/deep_nets/runs
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
