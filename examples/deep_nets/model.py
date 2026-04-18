@@ -17,12 +17,52 @@ from spikinggamma.utils.enums import StepMode
 
 
 VGG_CONFIGS = {
-    "vgg5": [64, "M", 128, "M", 256, 256, "M"],
-    "vgg9": [64, 64, "M", 128, 128, "M", 256, 256, "M"],
-    "vgg11": [64, "M", 128, "M", 256, 256, "M", 512, 512, "M", 512, 512, "M"],
-    "vgg13": [64, 64, "M", 128, 128, "M", 256, 256, "M", 512, 512, "M", 512, 512, "M"],
-    "vgg16": [64, 64, "M", 128, 128, "M", 256, 256, 256, "M", 512, 512, 512, "M", 512, 512, 512, "M"],
-    "vgg19": [64, 64, "M", 128, 128, "M", 256, 256, 256, 256, "M", 512, 512, 512, 512, "M", 512, 512, 512, 512, "M"],
+    "vgg6": [
+        (64, 1, "max"),
+        (128, 2, "max"),
+        (256, 1, "max"),
+        (512, 2, "max"),
+        (512, 2, "aavg"),
+    ],
+    "vgg9": [
+        (64, 1, "max"),
+        (128, 2, "max"),
+        (256, 1, "max"),
+        (256, 2, "max"),
+        (512, 1, "max"),
+        (512, 2, "max"),
+        (512, 1, "max"),
+        (512, 2, "aavg"),
+    ],
+    "vgg12": [
+        (64, 1, "max"),
+        (64, 2, "max"),
+        (128, 1, "max"),
+        (128, 2, "max"),
+        (256, 1, "max"),
+        (256, 1, "max"),
+        (256, 2, "max"),
+        (512, 1, "max"),
+        (512, 1, "max"),
+        (512, 1, "max"),
+        (512, 2, "aavg"),
+    ],
+    "vgg15": [
+        (64, 1, "max"),
+        (64, 1, "max"),
+        (128, 2, "max"),
+        (128, 1, "max"),
+        (256, 1, "max"),
+        (256, 1, "max"),
+        (256, 2, "max"),
+        (512, 1, "max"),
+        (512, 1, "max"),
+        (512, 2, "max"),
+        (512, 1, "max"),
+        (512, 1, "max"),
+        (512, 2, "max"),
+        (512, 2, "aavg"),
+    ],
 }
 
 
@@ -32,8 +72,8 @@ class LayerSpec:
     name: str
 
 
-FEATURE_CONV_TYPES = {"standard", "ws"}
-CLASSIFIER_STYLES = {"layernorm", "ws", "none"}
+FEATURE_NORMS = {"layernorm", "ws", "none"}
+CLASSIFIER_NORMS = {"layernorm", "ws", "none"}
 
 
 def _single_timescale_decay_rates(bucket_decay_rates: torch.Tensor) -> torch.Tensor:
@@ -50,6 +90,10 @@ def _pool_output_dim(size: int, kernel_size: int, stride: int, padding: int = 0,
     return ((size + 2 * padding - dilation * (kernel_size - 1) - 1) // stride) + 1
 
 
+def _adaptive_pool_output_dim(target_size: int) -> int:
+    return target_size
+
+
 class VGGSpikingGammaNet(nn.Module):
     def __init__(
         self,
@@ -57,32 +101,27 @@ class VGGSpikingGammaNet(nn.Module):
         n_outputs: int,
         classifier_bucket_decay_rates: torch.Tensor,
         spike_config: SpikeConfig,
-        feature_cfg: Sequence[int | str] = VGG_CONFIGS["vgg11"],
-        classifier_hidden_dims: Sequence[int] = (512,),
-        conv_kernel_size: int = 3,
-        conv_stride: int = 1,
-        conv_padding: int = 1,
-        pool_kernel_size: int = 2,
-        pool_stride: int = 2,
+        feature_cfg: Sequence[tuple[int, int, str]] = VGG_CONFIGS["vgg9"],
+        classifier_hidden_dims: Sequence[int] = (),
         classifier_dropout: float = 0.0,
         feature_bucket_decay_rates: torch.Tensor | None = None,
-        feature_conv_type: str = "ws",
-        classifier_style: str = "layernorm",
+        feature_norm: str = "ws",
+        classifier_norm: str = "layernorm",
     ):
         super().__init__()
         if len(input_shape) != 3:
             raise ValueError(f"Expected input_shape to be (C, H, W), got {tuple(input_shape)}")
-        if feature_conv_type not in FEATURE_CONV_TYPES:
-            raise ValueError(f"Unknown feature_conv_type '{feature_conv_type}'. Available: {sorted(FEATURE_CONV_TYPES)}")
-        if classifier_style not in CLASSIFIER_STYLES:
-            raise ValueError(f"Unknown classifier_style '{classifier_style}'. Available: {sorted(CLASSIFIER_STYLES)}")
+        if feature_norm not in FEATURE_NORMS:
+            raise ValueError(f"Unknown feature_norm '{feature_norm}'. Available: {sorted(FEATURE_NORMS)}")
+        if classifier_norm not in CLASSIFIER_NORMS:
+            raise ValueError(f"Unknown classifier_norm '{classifier_norm}'. Available: {sorted(CLASSIFIER_NORMS)}")
 
         self.input_shape = tuple(int(v) for v in input_shape)
         self.n_outputs = int(n_outputs)
         self.feature_cfg = list(feature_cfg)
         self.classifier_hidden_dims = tuple(int(v) for v in classifier_hidden_dims)
-        self.feature_conv_type = feature_conv_type
-        self.classifier_style = classifier_style
+        self.feature_norm = feature_norm
+        self.classifier_norm = classifier_norm
 
         if feature_bucket_decay_rates is None:
             feature_bucket_decay_rates = _single_timescale_decay_rates(classifier_bucket_decay_rates)
@@ -92,12 +131,7 @@ class VGGSpikingGammaNet(nn.Module):
             input_shape=self.input_shape,
             bucket_decay_rates=feature_bucket_decay_rates,
             spike_config=spike_config,
-            conv_kernel_size=conv_kernel_size,
-            conv_stride=conv_stride,
-            conv_padding=conv_padding,
-            pool_kernel_size=pool_kernel_size,
-            pool_stride=pool_stride,
-            feature_conv_type=feature_conv_type,
+            feature_norm=feature_norm,
         )
         self.feature_shape = feature_shape
         self.feature_dim = feature_shape[0] * feature_shape[1] * feature_shape[2]
@@ -109,7 +143,7 @@ class VGGSpikingGammaNet(nn.Module):
             bucket_decay_rates=classifier_bucket_decay_rates,
             spike_config=spike_config,
             dropout=classifier_dropout,
-            classifier_style=classifier_style,
+            classifier_norm=classifier_norm,
         )
 
         self.spike_out = SpikingGammaOutput(
@@ -118,16 +152,11 @@ class VGGSpikingGammaNet(nn.Module):
 
     def _make_feature_extractor(
         self,
-        feature_cfg: Sequence[int | str],
+        feature_cfg: Sequence[tuple[int, int, str]],
         input_shape: Sequence[int],
         bucket_decay_rates: torch.Tensor,
         spike_config: SpikeConfig,
-        conv_kernel_size: int,
-        conv_stride: int,
-        conv_padding: int,
-        pool_kernel_size: int,
-        pool_stride: int,
-        feature_conv_type: str,
+        feature_norm: str,
     ) -> tuple[nn.ModuleList, list[LayerSpec], tuple[int, int, int]]:
         channels, height, width = input_shape
         layers = nn.ModuleList()
@@ -135,21 +164,12 @@ class VGGSpikingGammaNet(nn.Module):
         conv_idx = 0
         pool_idx = 0
 
-        for item in feature_cfg:
-            if item == "M":
-                pool_idx += 1
-                layers.append(nn.MaxPool2d(kernel_size=pool_kernel_size, stride=pool_stride))
-                specs.append(LayerSpec(kind="pool", name=f"pool{pool_idx}"))
-                height = _pool_output_dim(height, pool_kernel_size, pool_stride)
-                width = _pool_output_dim(width, pool_kernel_size, pool_stride)
-                continue
-
-            out_channels = int(item)
+        for out_channels, block_pool_size, block_pool_type in feature_cfg:
             conv_idx += 1
             shape_out = (
-                out_channels,
-                _conv_output_dim(height, conv_kernel_size, conv_stride, conv_padding),
-                _conv_output_dim(width, conv_kernel_size, conv_stride, conv_padding),
+                int(out_channels),
+                _conv_output_dim(height, kernel_size=3, stride=1, padding=1),
+                _conv_output_dim(width, kernel_size=3, stride=1, padding=1),
             )
             layers.append(
                 SpikingGammaNeuron(
@@ -158,20 +178,33 @@ class VGGSpikingGammaNet(nn.Module):
                         shape_out=shape_out,
                         n_buckets=bucket_decay_rates.shape[-1],
                         synaptic_function=self._build_conv_synapse(
-                            feature_conv_type=feature_conv_type,
+                            feature_norm=feature_norm,
                             in_channels=channels,
                             out_channels=out_channels,
-                            kernel_size=conv_kernel_size,
-                            stride=conv_stride,
-                            padding=conv_padding,
+                            kernel_size=3,
+                            stride=1,
+                            padding=1,
                             bias=True,
                         ),
                     ),
-                    signal_fn=DefaultSignalFunction(),
+                    signal_fn=DefaultSignalFunction(
+                        norm_fn=self._build_feature_norm(feature_norm=feature_norm, shape_out=shape_out),
+                    ),
                 )
             )
             specs.append(LayerSpec(kind="conv", name=f"conv{conv_idx}"))
             channels, height, width = shape_out
+
+            pool_layer, height, width = self._build_pool_layer(
+                pool_size=block_pool_size,
+                pool_type=block_pool_type,
+                height=height,
+                width=width,
+            )
+            if pool_layer is not None:
+                pool_idx += 1
+                layers.append(pool_layer)
+                specs.append(LayerSpec(kind="pool", name=f"pool{pool_idx}"))
 
         return layers, specs, (channels, height, width)
 
@@ -183,7 +216,7 @@ class VGGSpikingGammaNet(nn.Module):
         bucket_decay_rates: torch.Tensor,
         spike_config: SpikeConfig,
         dropout: float,
-        classifier_style: str,
+        classifier_norm: str,
     ) -> tuple[nn.ModuleList, list[LayerSpec]]:
         dims = [input_dim, *hidden_dims, output_dim]
         layers = nn.ModuleList()
@@ -192,7 +225,7 @@ class VGGSpikingGammaNet(nn.Module):
         for idx, (dim_in, dim_out) in enumerate(zip(dims[:-1], dims[1:]), start=1):
             is_output_layer = idx == len(dims) - 1
             dropout_fn = nn.Dropout(dropout) if dropout > 0 and not is_output_layer else None
-            norm_fn = self._build_classifier_norm(classifier_style=classifier_style, dim_out=dim_out)
+            norm_fn = self._build_classifier_norm(classifier_norm=classifier_norm, dim_out=dim_out) if not is_output_layer else None
             layers.append(
                 SpikingGammaNeuron(
                     spike_fn=SigmaDeltaSpikeFunction(bucket_decay_rates, spike_config),
@@ -200,7 +233,7 @@ class VGGSpikingGammaNet(nn.Module):
                         shape_out=(dim_out,),
                         n_buckets=bucket_decay_rates.shape[-1],
                         synaptic_function=self._build_classifier_synapse(
-                            classifier_style=classifier_style,
+                            classifier_norm=classifier_norm,
                             dim_in=dim_in,
                             dim_out=dim_out,
                         ),
@@ -214,7 +247,7 @@ class VGGSpikingGammaNet(nn.Module):
 
     def _build_conv_synapse(
         self,
-        feature_conv_type: str,
+        feature_norm: str,
         in_channels: int,
         out_channels: int,
         kernel_size: int,
@@ -222,7 +255,7 @@ class VGGSpikingGammaNet(nn.Module):
         padding: int,
         bias: bool,
     ):
-        conv_cls = WSConv2dPerNeuron if feature_conv_type == "ws" else Conv2dPerNeuron
+        conv_cls = WSConv2dPerNeuron if feature_norm == "ws" else Conv2dPerNeuron
         return conv_cls(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -232,15 +265,43 @@ class VGGSpikingGammaNet(nn.Module):
             bias=bias,
         )
 
-    def _build_classifier_synapse(self, classifier_style: str, dim_in: int, dim_out: int):
-        if classifier_style == "ws":
+    def _build_feature_norm(self, feature_norm: str, shape_out: tuple[int, int, int]):
+        if feature_norm == "layernorm":
+            return nn.LayerNorm(shape_out)
+        return None
+
+    def _build_classifier_synapse(self, classifier_norm: str, dim_in: int, dim_out: int):
+        if classifier_norm == "ws":
             return WSLinearPerNeuron(dim_in, dim_out, bias=True)
         return LinearPerNeuron(dim_in, dim_out)
 
-    def _build_classifier_norm(self, classifier_style: str, dim_out: int):
-        if classifier_style == "layernorm":
+    def _build_classifier_norm(self, classifier_norm: str, dim_out: int):
+        if classifier_norm == "layernorm":
             return nn.LayerNorm((dim_out,))
         return None
+
+    def _build_pool_layer(
+        self,
+        pool_size: int,
+        pool_type: str,
+        height: int,
+        width: int,
+    ):
+        if pool_type == "max":
+            if pool_size <= 1:
+                return None, height, width
+            kernel_size = pool_size
+            stride = pool_size
+            next_height = _pool_output_dim(height, kernel_size, stride)
+            next_width = _pool_output_dim(width, kernel_size, stride)
+            return nn.MaxPool2d(kernel_size=kernel_size, stride=stride), next_height, next_width
+
+        if pool_type == "aavg":
+            next_height = _adaptive_pool_output_dim(pool_size)
+            next_width = _adaptive_pool_output_dim(pool_size)
+            return nn.AdaptiveAvgPool2d((pool_size, pool_size)), next_height, next_width
+
+        raise ValueError(f"Unknown pool_type '{pool_type}'")
 
     def reset(self):
         for layer, spec in zip(self.feature_layers, self.feature_specs):
@@ -290,12 +351,12 @@ def build_vgg_spiking_gamma_net(
     n_outputs: int,
     classifier_bucket_decay_rates: torch.Tensor,
     spike_config: SpikeConfig,
-    architecture: str = "vgg11",
-    classifier_hidden_dims: Iterable[int] = (512,),
+    architecture: str = "vgg9",
+    classifier_hidden_dims: Iterable[int] = (),
     classifier_dropout: float = 0.0,
     feature_bucket_decay_rates: torch.Tensor | None = None,
-    feature_conv_type: str = "ws",
-    classifier_style: str = "layernorm",
+    feature_norm: str = "ws",
+    classifier_norm: str = "layernorm",
     **kwargs,
 ) -> VGGSpikingGammaNet:
     if architecture not in VGG_CONFIGS:
@@ -310,7 +371,7 @@ def build_vgg_spiking_gamma_net(
         classifier_hidden_dims=tuple(classifier_hidden_dims),
         classifier_dropout=classifier_dropout,
         feature_bucket_decay_rates=feature_bucket_decay_rates,
-        feature_conv_type=feature_conv_type,
-        classifier_style=classifier_style,
+        feature_norm=feature_norm,
+        classifier_norm=classifier_norm,
         **kwargs,
     )

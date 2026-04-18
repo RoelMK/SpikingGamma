@@ -4,9 +4,10 @@ from pathlib import Path
 
 import tonic
 import torch
-from tonic import DiskCachedDataset
-from torchvision import transforms as vision_transforms
+from tonic import DiskCachedDataset, transforms
 
+
+DVSGESTURE_SAMPLE_LENGTH = 6_000_000
 
 THIS_DIR = Path(__file__).resolve().parent
 EXAMPLES_DIR = THIS_DIR.parent
@@ -14,40 +15,68 @@ DATA_PATH = EXAMPLES_DIR / "data"
 CACHE_PATH = EXAMPLES_DIR / "cache"
 
 
-def _resize_frames(size: int, antialias: bool = True):
-    return vision_transforms.Resize((size, size), antialias=antialias)
+class TimeSliceTransform:
+    def __init__(self, time_steps: int, time_dim: int = 0):
+        self.time_steps = time_steps
+        self.time_dim = time_dim
+
+    def __call__(self, x: torch.Tensor):
+        tdim = self.time_dim
+        size = x.shape[tdim]
+        if size > self.time_steps:
+            return x.narrow(tdim, 0, self.time_steps)
+        if size < self.time_steps:
+            pad_shape = list(x.shape)
+            pad_shape[tdim] = self.time_steps - size
+            pad = torch.zeros(pad_shape, dtype=x.dtype, device=x.device)
+            return torch.cat([x, pad], dim=tdim)
+        return x
 
 
-def get_dvsgesture_dataset(timestep_size: int = 75000, sensor_width: int = 32, cache: bool = True):
+def get_dvsgesture_dataset(timestep_size: int = 10000, sensor_width: int = 32, cache: bool = True):
     DATA_PATH.mkdir(parents=True, exist_ok=True)
     CACHE_PATH.mkdir(parents=True, exist_ok=True)
 
     input_shape = (2, sensor_width, sensor_width)
-    sensor_size = tonic.datasets.DVSGesture.sensor_size
-
-    train_dataset = tonic.datasets.DVSGesture(save_to=str(DATA_PATH), train=True)
-    test_dataset = tonic.datasets.DVSGesture(save_to=str(DATA_PATH), train=False)
-
-    frame_transform = tonic.transforms.Compose([
-        tonic.transforms.ToFrame(sensor_size=sensor_size, time_window=timestep_size),
-        torch.tensor,
-        _resize_frames(sensor_width, antialias=True),
+    transform = transforms.Compose([
+        transforms.Denoise(filter_time=10000),
+        tonic.transforms.Downsample(
+            sensor_size=tonic.datasets.DVSGesture.sensor_size,
+            target_size=(sensor_width, sensor_width),
+        ),
+        transforms.ToFrame(
+            sensor_size=(sensor_width, sensor_width, 2),
+            time_window=timestep_size,
+        ),
+        torch.from_numpy,
+        TimeSliceTransform(time_steps=DVSGESTURE_SAMPLE_LENGTH // timestep_size),
     ])
 
+    train_dataset = tonic.datasets.DVSGesture(
+        save_to=str(DATA_PATH),
+        transform=transform,
+        train=True,
+    )
+    test_dataset = tonic.datasets.DVSGesture(
+        save_to=str(DATA_PATH),
+        transform=transform,
+        train=False,
+    )
+
     if cache:
+        train_cache_path = CACHE_PATH / f"DVSGesture_t{timestep_size}_s{sensor_width}_train"
+        test_cache_path = CACHE_PATH / f"DVSGesture_t{timestep_size}_s{sensor_width}_test"
         train_dataset = DiskCachedDataset(
             train_dataset,
-            transform=frame_transform,
-            cache_path=str(CACHE_PATH / f"DVSGesture_t{timestep_size}_s{sensor_width}_train"),
+            transform=torch.from_numpy,
+            cache_path=str(train_cache_path),
         )
         test_dataset = DiskCachedDataset(
             test_dataset,
-            transform=frame_transform,
-            cache_path=str(CACHE_PATH / f"DVSGesture_t{timestep_size}_s{sensor_width}_test"),
+            transform=torch.from_numpy,
+            cache_path=str(test_cache_path),
         )
-    else:
-        train_dataset.transform = frame_transform
-        test_dataset.transform = frame_transform
 
     n_outputs = 11
-    return train_dataset, test_dataset, input_shape, n_outputs, None
+    time_steps = DVSGESTURE_SAMPLE_LENGTH // timestep_size
+    return train_dataset, test_dataset, input_shape, n_outputs, time_steps

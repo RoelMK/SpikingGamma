@@ -41,36 +41,31 @@ def parse_args():
     parser.add_argument("--resume", type=Path, default=None, help="Path to a saved checkpoint such as last.pt")
 
     parser.add_argument("--epochs", type=int, default=200)
-    parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float, default=0.0)
     parser.add_argument("--train-batch-size", type=int, default=64)
     parser.add_argument("--test-batch-size", type=int, default=64)
     parser.add_argument("--num-workers", type=int, default=0)
 
-    parser.add_argument("--architecture", type=str, default="vgg9")
-    parser.add_argument("--classifier-hidden-dims", type=int, nargs="*", default=[512])
+    parser.add_argument("--architecture", type=str, default="vgg6")
+    parser.add_argument("--classifier-hidden-dims", type=int, nargs="*", default=[])
     parser.add_argument("--classifier-dropout", type=float, default=0.0)
-    parser.add_argument("--classifier-style", choices=["layernorm", "ws", "none"], default="layernorm")
-    parser.add_argument("--feature-conv-type", choices=["ws", "standard"], default="ws")
-    parser.add_argument("--conv-kernel-size", type=int, default=3)
-    parser.add_argument("--conv-stride", type=int, default=1)
-    parser.add_argument("--conv-padding", type=int, default=1)
-    parser.add_argument("--pool-kernel-size", type=int, default=2)
-    parser.add_argument("--pool-stride", type=int, default=2)
+    parser.add_argument("--classifier-norm", choices=["layernorm", "ws", "none"], default="layernorm")
+    parser.add_argument("--feature-norm", choices=["layernorm", "ws", "none"], default="ws")
 
-    parser.add_argument("--classifier-n-buckets", type=int, default=5)
-    parser.add_argument("--classifier-decay-factor", type=float, default=0.5)
-    parser.add_argument("--feature-bucket-decay", type=float, default=0.53)
+    parser.add_argument("--classifier-n-buckets", type=int, default=10)
+    parser.add_argument("--classifier-decay-factor", type=float, default=0.1)
+    parser.add_argument("--feature-bucket-decay", type=float, default=0.1)
     parser.add_argument("--spike-threshold", type=float, default=0.3)
     parser.add_argument("--spike-grad-multiplier", type=float, default=None)
     parser.add_argument("--allow-multiple-spikes", action="store_true")
     parser.add_argument("--disable-adaptive-threshold", action="store_true")
 
-    parser.add_argument("--timestep-size", type=int, default=75000)
+    parser.add_argument("--timestep-size", type=int, default=12000)
     parser.add_argument("--sensor-width", type=int, default=32)
     parser.add_argument("--no-cache", action="store_true")
 
-    parser.add_argument("--scheduler", choices=["none", "step", "cosine"], default="cosine")
+    parser.add_argument("--scheduler", choices=["none", "step", "cosine"], default="none")
     parser.add_argument("--scheduler-step-size", type=int, default=20)
     parser.add_argument("--scheduler-gamma", type=float, default=0.5)
     parser.add_argument("--scheduler-t-max", type=int, default=None)
@@ -98,13 +93,8 @@ def build_config(args, run_id: str) -> dict:
         "architecture": args.architecture,
         "classifier_hidden_dims": list(args.classifier_hidden_dims),
         "classifier_dropout": args.classifier_dropout,
-        "classifier_style": args.classifier_style,
-        "feature_conv_type": args.feature_conv_type,
-        "conv_kernel_size": args.conv_kernel_size,
-        "conv_stride": args.conv_stride,
-        "conv_padding": args.conv_padding,
-        "pool_kernel_size": args.pool_kernel_size,
-        "pool_stride": args.pool_stride,
+        "classifier_norm": args.classifier_norm,
+        "feature_norm": args.feature_norm,
         "classifier_n_buckets": args.classifier_n_buckets,
         "classifier_decay_factor": args.classifier_decay_factor,
         "feature_bucket_decay": args.feature_bucket_decay,
@@ -186,13 +176,8 @@ def main():
         architecture=args.architecture,
         classifier_hidden_dims=tuple(args.classifier_hidden_dims),
         classifier_dropout=args.classifier_dropout,
-        classifier_style=args.classifier_style,
-        feature_conv_type=args.feature_conv_type,
-        conv_kernel_size=args.conv_kernel_size,
-        conv_stride=args.conv_stride,
-        conv_padding=args.conv_padding,
-        pool_kernel_size=args.pool_kernel_size,
-        pool_stride=args.pool_stride,
+        classifier_norm=args.classifier_norm,
+        feature_norm=args.feature_norm,
     ).to(device)
 
     optimizer = torch.optim.Adam(
