@@ -33,9 +33,17 @@ class TimeSliceTransform:
         return x
 
 
-def get_dvsgesture_dataset(timestep_size: int = 10000, sensor_width: int = 32, cache: bool = True):
-    DATA_PATH.mkdir(parents=True, exist_ok=True)
-    CACHE_PATH.mkdir(parents=True, exist_ok=True)
+def get_dvsgesture_dataset(
+    timestep_size: int = 10000,
+    sensor_width: int = 32,
+    cache: bool = True,
+    data_path: str | Path = DATA_PATH,
+    cache_path: str | Path = CACHE_PATH,
+):
+    data_path = Path(data_path)
+    cache_path = Path(cache_path)
+    data_path.mkdir(parents=True, exist_ok=True)
+    cache_path.mkdir(parents=True, exist_ok=True)
 
     input_shape = (2, sensor_width, sensor_width)
     transform = transforms.Compose([
@@ -53,19 +61,19 @@ def get_dvsgesture_dataset(timestep_size: int = 10000, sensor_width: int = 32, c
     ])
 
     train_dataset = tonic.datasets.DVSGesture(
-        save_to=str(DATA_PATH),
+        save_to=str(data_path),
         transform=transform,
         train=True,
     )
     test_dataset = tonic.datasets.DVSGesture(
-        save_to=str(DATA_PATH),
+        save_to=str(data_path),
         transform=transform,
         train=False,
     )
 
     if cache:
-        train_cache_path = CACHE_PATH / f"DVSGesture_t{timestep_size}_s{sensor_width}_train"
-        test_cache_path = CACHE_PATH / f"DVSGesture_t{timestep_size}_s{sensor_width}_test"
+        train_cache_path = cache_path / f"DVSGesture_t{timestep_size}_s{sensor_width}_train"
+        test_cache_path = cache_path / f"DVSGesture_t{timestep_size}_s{sensor_width}_test"
         train_dataset = DiskCachedDataset(
             train_dataset,
             transform=torch.from_numpy,

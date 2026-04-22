@@ -18,7 +18,7 @@ for path in (REPO_ROOT, EXAMPLES_DIR, THIS_DIR):
     if path_str not in sys.path:
         sys.path.insert(0, path_str)
 
-from load_dvsgesture import get_dvsgesture_dataset
+from load_dvsgesture import CACHE_PATH, DATA_PATH, get_dvsgesture_dataset
 from model import build_vgg_spiking_gamma_net
 from training import (
     EpochMetrics,
@@ -39,6 +39,8 @@ def parse_args():
     parser.add_argument("--output-root", type=Path, default=THIS_DIR / "runs" / "dvsgesture")
     parser.add_argument("--run-id", type=str, default=None)
     parser.add_argument("--resume", type=Path, default=None, help="Path to a saved checkpoint such as last.pt")
+    parser.add_argument("--data-path", type=Path, default=DATA_PATH)
+    parser.add_argument("--cache-path", type=Path, default=CACHE_PATH)
 
     parser.add_argument("--epochs", type=int, default=70)
     parser.add_argument("--optimizer", choices=["adam", "adamw"], default="adam")
@@ -80,6 +82,8 @@ def build_config(args, run_id: str) -> dict:
         "run_id": run_id,
         "started_at": datetime.now().isoformat(),
         "output_root": str(args.output_root),
+        "data_path": str(args.data_path),
+        "cache_path": str(args.cache_path),
         "epochs": args.epochs,
         "optimizer": args.optimizer,
         "lr": args.lr,
@@ -125,6 +129,8 @@ def main():
 
     train_dataset, test_dataset, input_shape, n_outputs, _ = get_dvsgesture_dataset(
         timestep_size=args.timestep_size,
+        data_path=args.data_path,
+        cache_path=args.cache_path,
     )
 
     train_dataloader = DataLoader(
