@@ -49,19 +49,19 @@ def run_single_timestep_epoch(
                 optimizer.zero_grad()
 
             batch_loss = 0.0
-            spike_steps = []
+            logits_per_timestep = []
             for t in range(time_steps):
-                logits, _, spikes = model(data[t])
+                logits = model(data[t])
+                logits_per_timestep.append(logits.detach())
                 loss_t = loss_fn(logits, labels) / time_steps
                 if is_training:
                     loss_t.backward()
                 batch_loss += loss_t.item()
-                spike_steps.append(spikes.detach())
 
             if is_training:
                 optimizer.step()
 
-            predictions = torch.stack(spike_steps, dim=0).sum(dim=0).argmax(dim=1)
+            predictions = torch.stack(logits_per_timestep, dim=0).sum(dim=0).argmax(dim=1)
             batch_size = labels.size(0)
             total_loss += batch_loss * batch_size
             total_correct += (predictions == labels).sum().item()

@@ -40,30 +40,27 @@ def parse_args():
     parser.add_argument("--run-id", type=str, default=None)
     parser.add_argument("--resume", type=Path, default=None, help="Path to a saved checkpoint such as last.pt")
 
-    parser.add_argument("--epochs", type=int, default=200)
+    parser.add_argument("--epochs", type=int, default=70)
+    parser.add_argument("--optimizer", choices=["adam", "adamw"], default="adam")
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float, default=0.0)
     parser.add_argument("--train-batch-size", type=int, default=64)
     parser.add_argument("--test-batch-size", type=int, default=64)
     parser.add_argument("--num-workers", type=int, default=0)
 
-    parser.add_argument("--architecture", type=str, default="vgg6")
+    parser.add_argument("--architecture", type=str, default="vgg9")
     parser.add_argument("--classifier-hidden-dims", type=int, nargs="*", default=[])
     parser.add_argument("--classifier-dropout", type=float, default=0.0)
-    parser.add_argument("--classifier-norm", choices=["layernorm", "ws", "none"], default="layernorm")
-    parser.add_argument("--feature-norm", choices=["layernorm", "ws", "none"], default="ws")
+    parser.add_argument("--classifier-norm", choices=["layernorm", "none"], default="layernorm")
+    parser.add_argument("--classifier-weight-standardization", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--feature-norm", choices=["layernorm", "groupnorm", "none"], default="groupnorm")
+    parser.add_argument("--feature-weight-standardization", action=argparse.BooleanOptionalAction, default=True)
 
-    parser.add_argument("--classifier-n-buckets", type=int, default=10)
-    parser.add_argument("--classifier-decay-factor", type=float, default=0.1)
-    parser.add_argument("--feature-bucket-decay", type=float, default=0.1)
+    parser.add_argument("--n-buckets", type=int, default=5)
+    parser.add_argument("--decay-factor", type=float, default=0.5) # 0.08
     parser.add_argument("--spike-threshold", type=float, default=0.3)
-    parser.add_argument("--spike-grad-multiplier", type=float, default=None)
-    parser.add_argument("--allow-multiple-spikes", action="store_true")
-    parser.add_argument("--disable-adaptive-threshold", action="store_true")
 
-    parser.add_argument("--timestep-size", type=int, default=12000)
-    parser.add_argument("--sensor-width", type=int, default=32)
-    parser.add_argument("--no-cache", action="store_true")
+    parser.add_argument("--timestep-size", type=int, default=75000) # 12000
 
     parser.add_argument("--scheduler", choices=["none", "step", "cosine"], default="none")
     parser.add_argument("--scheduler-step-size", type=int, default=20)
@@ -75,16 +72,16 @@ def parse_args():
 
 
 def build_config(args, run_id: str) -> dict:
-    classifier_bucket_decay_rates = compute_linspace_bucket_decay_rates(
-        args.classifier_n_buckets,
-        args.classifier_decay_factor,
+    bucket_decay_rates = compute_linspace_bucket_decay_rates(
+        args.n_buckets,
+        args.decay_factor,
     )
-    feature_bucket_decay_rates = [args.feature_bucket_decay]
     return {
         "run_id": run_id,
         "started_at": datetime.now().isoformat(),
         "output_root": str(args.output_root),
         "epochs": args.epochs,
+        "optimizer": args.optimizer,
         "lr": args.lr,
         "weight_decay": args.weight_decay,
         "train_batch_size": args.train_batch_size,
@@ -94,19 +91,14 @@ def build_config(args, run_id: str) -> dict:
         "classifier_hidden_dims": list(args.classifier_hidden_dims),
         "classifier_dropout": args.classifier_dropout,
         "classifier_norm": args.classifier_norm,
+        "classifier_weight_standardization": args.classifier_weight_standardization,
         "feature_norm": args.feature_norm,
-        "classifier_n_buckets": args.classifier_n_buckets,
-        "classifier_decay_factor": args.classifier_decay_factor,
-        "feature_bucket_decay": args.feature_bucket_decay,
-        "classifier_bucket_decay_rates": classifier_bucket_decay_rates.tolist(),
-        "feature_bucket_decay_rates": feature_bucket_decay_rates,
+        "feature_weight_standardization": args.feature_weight_standardization,
+        "n_buckets": args.n_buckets,
+        "decay_factor": args.decay_factor,
+        "bucket_decay_rates": bucket_decay_rates.tolist(),
         "spike_threshold": args.spike_threshold,
-        "spike_grad_multiplier": args.spike_grad_multiplier,
-        "allow_multiple_spikes": args.allow_multiple_spikes,
-        "use_adaptive_threshold": not args.disable_adaptive_threshold,
         "timestep_size": args.timestep_size,
-        "sensor_width": args.sensor_width,
-        "cache": not args.no_cache,
         "scheduler": args.scheduler,
         "scheduler_step_size": args.scheduler_step_size,
         "scheduler_gamma": args.scheduler_gamma,
@@ -133,8 +125,6 @@ def main():
 
     train_dataset, test_dataset, input_shape, n_outputs, _ = get_dvsgesture_dataset(
         timestep_size=args.timestep_size,
-        sensor_width=args.sensor_width,
-        cache=not args.no_cache,
     )
 
     train_dataloader = DataLoader(
@@ -152,35 +142,34 @@ def main():
         collate_fn=tonic.collation.PadTensors(batch_first=False),
     )
 
-    classifier_bucket_decay_rates = compute_linspace_bucket_decay_rates(
-        args.classifier_n_buckets,
-        args.classifier_decay_factor,
-    )
-    feature_bucket_decay_rates = torch.tensor(
-        [args.feature_bucket_decay],
-        dtype=classifier_bucket_decay_rates.dtype,
+    bucket_decay_rates = compute_linspace_bucket_decay_rates(
+        args.n_buckets,
+        args.decay_factor,
     )
     spike_config = SpikeConfig(
         spike_threshold=args.spike_threshold,
-        allow_multiple_spikes=args.allow_multiple_spikes,
-        use_adaptive_threshold=not args.disable_adaptive_threshold,
-        spike_grad_multiplier=args.spike_grad_multiplier,
     )
 
     model = build_vgg_spiking_gamma_net(
         input_shape=input_shape,
         n_outputs=n_outputs,
-        classifier_bucket_decay_rates=classifier_bucket_decay_rates,
-        feature_bucket_decay_rates=feature_bucket_decay_rates,
+        bucket_decay_rates=bucket_decay_rates,
         spike_config=spike_config,
         architecture=args.architecture,
         classifier_hidden_dims=tuple(args.classifier_hidden_dims),
         classifier_dropout=args.classifier_dropout,
         classifier_norm=args.classifier_norm,
+        classifier_weight_standardization=args.classifier_weight_standardization,
         feature_norm=args.feature_norm,
+        feature_weight_standardization=args.feature_weight_standardization,
     ).to(device)
+    print(model)
 
-    optimizer = torch.optim.Adam(
+    optimizer_cls = {
+        "adam": torch.optim.Adam,
+        "adamw": torch.optim.AdamW,
+    }[args.optimizer]
+    optimizer = optimizer_cls(
         model.parameters(),
         lr=args.lr,
         weight_decay=args.weight_decay,

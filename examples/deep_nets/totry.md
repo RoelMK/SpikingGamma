@@ -1,0 +1,8 @@
+--decay-factor 0.35
+--decay-factor 0.65
+--n-buckets 10 --decay-factor 0.5
+--no-feature_weight_standardization
+--classifier_norm none
+--no-feature-weight-standardization --classifier-norm none
+--feature-norm layernorm
+--no-feature_weight_standardization --feature-norm layernorm
