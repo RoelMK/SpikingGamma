@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import shlex
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -59,10 +60,10 @@ def parse_args():
     parser.add_argument("--feature-weight-standardization", action=argparse.BooleanOptionalAction, default=True)
 
     parser.add_argument("--n-buckets", type=int, default=5)
-    parser.add_argument("--decay-factor", type=float, default=0.5) # 0.08
+    parser.add_argument("--decay-factor", type=float, default=0.08)
     parser.add_argument("--spike-threshold", type=float, default=0.3)
 
-    parser.add_argument("--timestep-size", type=int, default=75000) # 12000
+    parser.add_argument("--timestep-size", type=int, default=12000)
 
     parser.add_argument("--scheduler", choices=["none", "step", "cosine"], default="none")
     parser.add_argument("--scheduler-step-size", type=int, default=20)
@@ -112,6 +113,24 @@ def build_config(args, run_id: str) -> dict:
     }
 
 
+def append_runs_index(output_root: Path, config: dict, argv: list[str]):
+    output_root.mkdir(parents=True, exist_ok=True)
+    runs_path = output_root / "runs.md"
+    if not runs_path.exists():
+        runs_path.write_text(
+            "| Timestamp | Run | Command line |\n"
+            "| --- | --- | --- |\n",
+            encoding="utf-8",
+        )
+
+    command_line = " ".join(shlex.quote(arg) for arg in argv) if argv else "(defaults)"
+    command_line = command_line.replace("|", "\\|").replace("\n", " ")
+    started_at = str(config["started_at"]).replace("|", "\\|").replace("\n", " ")
+    run_id = str(config["run_id"]).replace("|", "\\|").replace("\n", " ")
+    with runs_path.open("a", encoding="utf-8") as f:
+        f.write(f"| {started_at} | {run_id} | `{command_line}` |\n")
+
+
 def main():
     args = parse_args()
     SigmaDeltaSpikeFunction.graph_mode = "none"
@@ -126,6 +145,8 @@ def main():
     run_dir = ensure_run_dir(args.output_root, run_id)
     config = build_config(args, run_id)
     save_config(run_dir, config)
+    if args.resume is None:
+        append_runs_index(args.output_root, config, sys.argv[1:])
 
     train_dataset, test_dataset, input_shape, n_outputs, _ = get_dvsgesture_dataset(
         timestep_size=args.timestep_size,
@@ -169,7 +190,8 @@ def main():
         feature_norm=args.feature_norm,
         feature_weight_standardization=args.feature_weight_standardization,
     ).to(device)
-    print(model)
+    if args.resume is None:
+        (run_dir / "model.txt").write_text(f"{model}\n", encoding="utf-8")
 
     optimizer_cls = {
         "adam": torch.optim.Adam,
