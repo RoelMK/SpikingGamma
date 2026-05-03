@@ -50,7 +50,7 @@ def parse_args():
     parser.add_argument("--test-batch-size", type=int, default=64)
     parser.add_argument("--num-workers", type=int, default=0)
 
-    parser.add_argument("--architecture", type=str, default="vgg9")
+    parser.add_argument("--architecture", type=str, default="vgg9_mid")
     parser.add_argument("--classifier-hidden-dims", type=int, nargs="*", default=[])
     parser.add_argument("--classifier-dropout", type=float, default=0.0)
     parser.add_argument("--classifier-norm", choices=["layernorm", "none"], default="layernorm")
