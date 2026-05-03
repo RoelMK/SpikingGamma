@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import argparse
 import shlex
@@ -59,17 +58,17 @@ def parse_args():
     parser.add_argument("--feature-norm", choices=["layernorm", "groupnorm", "none"], default="groupnorm")
     parser.add_argument("--feature-weight-standardization", action=argparse.BooleanOptionalAction, default=True)
 
-    parser.add_argument("--n-buckets", type=int, default=5)
-    parser.add_argument("--decay-factor", type=float, default=0.08)
+    parser.add_argument("--n-buckets", type=int, default=10)
+    parser.add_argument("--decay-factor", type=float, default=0.2)
     parser.add_argument("--spike-threshold", type=float, default=0.3)
 
     parser.add_argument("--timestep-size", type=int, default=12000)
 
-    parser.add_argument("--scheduler", choices=["none", "step", "cosine"], default="none")
+    parser.add_argument("--scheduler", choices=["none", "step", "cosine"], default="cosine")
     parser.add_argument("--scheduler-step-size", type=int, default=20)
     parser.add_argument("--scheduler-gamma", type=float, default=0.5)
-    parser.add_argument("--scheduler-t-max", type=int, default=None)
-    parser.add_argument("--scheduler-eta-min", type=float, default=None)
+    parser.add_argument("--scheduler-t-max", type=int, default=70) # can be None
+    parser.add_argument("--scheduler-eta-min", type=float, default=1e-6)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     return parser.parse_args()
 

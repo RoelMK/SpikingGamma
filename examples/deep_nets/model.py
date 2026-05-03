@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
@@ -7,9 +5,8 @@ import torch
 import torch.nn as nn
 
 from spikinggamma.dendrite.split import SplitDendriticFunction
-from spikinggamma.dendrite.synapse.conv2d import Conv2dPerNeuron
-from spikinggamma.dendrite.synapse.linear import LinearPerNeuron
-from normalization import WSConv2dPerNeuron, WSLinearPerNeuron
+from spikinggamma.dendrite.synapse.conv2d import Conv2dPerNeuron, WSConv2dPerNeuron
+from spikinggamma.dendrite.synapse.linear import LinearPerNeuron, WSLinearPerNeuron
 from spikinggamma.neuron import SpikingGammaNeuron
 from spikinggamma.signal.default import DefaultSignalFunction
 from spikinggamma.spike.base import SpikeConfig
@@ -35,14 +32,13 @@ def _make_vgg_config(
 
 
 VGG_CONFIGS = {
-    # Compact DVS-friendly variants. The number in the name counts conv layers plus one classifier layer.
+    # The number in the name counts conv layers plus one classifier layer.
     "vgg6": _make_vgg_config((1, 1, 1, 2), block_channels=(64, 128, 256, 512)),
     "vgg9": _make_vgg_config((2, 2, 2, 2), block_channels=(64, 128, 256, 512)),
     "vgg9_small": _make_vgg_config((2, 2, 2, 2), block_channels=(32, 64, 128, 256)),
     "vgg9_mid": _make_vgg_config((2, 2, 2, 2), block_channels=(64, 128, 256, 256)),
     "vgg12": _make_vgg_config((2, 2, 3, 2, 2)),
     "vgg15": _make_vgg_config((2, 2, 3, 3, 4)),
-    # Canonical VGG feature-extractor depths from the ImageNet VGG family.
     "vgg11": _make_vgg_config((1, 1, 2, 2, 2)),
     "vgg13": _make_vgg_config((2, 2, 2, 2, 2)),
     "vgg16": _make_vgg_config((2, 2, 3, 3, 3)),
