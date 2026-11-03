@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spikinggamma" 
+version = "0.1.0" 
+description = "Use SpikingGamma with PyTorch"
+readme = "README.md"
+requires-python = ">=3.10"
+keywords = ["spikinggamma", "spiking neural networks", "snn", "pytorch"]
+authors = [
+  {name = "Roel Koopman", email = "roel.koopman@cwi.nl" },
+  {name = "Sebastian Otte", email = "sebastian.otte@uni-luebeck.de" },
+  {name = "Sander Bohte", email = "s.m.bohte@cwi.nl" }
+]
+license = "MIT"
+# For a list of valid classifiers, see https://pypi.org/classifiers/
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Programming Language :: Python :: 3",
+]
+dependencies = [
+  "torch",
+]
+
+[project.optional-dependencies]
+datasets = ["tonic"]
+
+[project.urls]
+"Homepage" = "https://github.com/RoelMK/SpikingGamma"
+"Issues" = "https://github.com/RoelMK/SpikingGamma/issues"
+
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["spikinggamma*"]
